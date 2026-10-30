@@ -1,0 +1,11 @@
+import express,{type ErrorRequestHandler} from 'express';
+import {z} from 'zod';
+import {summarizeNotes} from './extract.js';
+import {generateLocalSummary} from './ollama.js';
+export const app=express();app.disable('x-powered-by');app.use(express.json({limit:'24kb'}));
+const schema=z.object({notes:z.string().trim().min(1).max(10000)}).strict();
+app.get('/health',(_req,res)=>res.json({status:'ok'}));
+app.post('/api/v1/notes/analyze',(req,res)=>{const input=schema.safeParse(req.body);if(!input.success){res.status(400).json({error:{code:'INVALID_INPUT',message:'Expected notes (1–10000 characters)'}});return;}res.json({data:summarizeNotes(input.data.notes)});});
+app.post('/api/v1/notes/ai-summary',async(req,res,next)=>{const input=schema.safeParse(req.body);if(!input.success){res.status(400).json({error:{code:'INVALID_INPUT',message:'Expected notes (1–10000 characters)'}});return;}try{res.json({data:{summary:await generateLocalSummary(input.data.notes)}});}catch(err){next(err);}});
+app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route not found'}}));
+const onError:ErrorRequestHandler=(error,_req,res,_next)=>{console.error('Request error',error);res.status(503).json({error:{code:'MODEL_UNAVAILABLE',message:'Processing unavailable; check local Ollama service'}});};app.use(onError);
